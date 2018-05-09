@@ -1,39 +1,37 @@
-#include <thread>
-#include <iostream>
-#include <mutex>
-#include <condition_variable>
+// condition_variable::wait (with predicate)
+#include <iostream>           // std::cout
+#include <thread>             // std::thread, std::this_thread::yield
+#include <mutex>              // std::mutex, std::unique_lock
+#include <condition_variable> // std::condition_variable
 
-using namespace std;
+std::mutex mtx;
+std::condition_variable cv;
 
-mutex mtx;
+int cargo = 0;
+bool shipment_available() {return cargo!=0;}
 
-void foo() 
-{
-  mtx.lock();
-  cout << "foo 1" << endl;
-  mtx.unlock();
+void consume (int n) {
+  for (int i=0; i<n; ++i) {
+    std::unique_lock<std::mutex> lck(mtx);
+    cv.wait(lck,shipment_available);
+    // consume:
+    std::cout << cargo << '\n';
+    cargo=0;
+  }
 }
 
-void bar(int x)
-{
-  mtx.lock();
-  cout << "foo 2" << endl;
-  mtx.unlock();
-}
+int main (){
+  std::thread consumer_thread (consume,15);
 
-int main() 
-{
-  thread first (foo);
-  thread second (bar,0);
+  // produce 10 items when needed:
+  for (int i=0; i<10; ++i) {
+    while (shipment_available()) std::this_thread::yield();
+    std::unique_lock<std::mutex> lck(mtx);
+    cargo = i+1;
+    cv.notify_one();
+  }
 
-  mtx.lock();
-  cout << "main, foo and bar now execute concurrently..." << endl;
-  mtx.unlock();
-
-  first.join();
-  second.join();
-
-  cout << "foo and bar completed." << endl;
+  consumer_thread.join();
 
   return 0;
 }
